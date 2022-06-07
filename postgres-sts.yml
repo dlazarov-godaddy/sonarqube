@@ -1,0 +1,99 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresdb
+  namespace: sonarqube
+spec:
+  selector:
+    matchLabels:
+      app: postgresdb
+  serviceName: postgresdb
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: postgresdb
+    spec:
+      volumes:
+        - name: postgres-empty-dir
+          emptyDir: {}
+        - name: postgres-empty-dir-tmp
+          emptyDir: {}
+        - name: configmap-vol
+          configMap:
+            name: postgresdb-configmap
+        - name: secret-vol
+          secret:
+            secretName: postgresdb-secret
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: postgresql
+          image: "docker.artifactory.ba.heg.com/postgres:14.1"
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U "postgres" -h 127.0.0.1 -p 5432
+            failureThreshold: 6
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThrehold: 1
+            timeoutSeconds: 5
+          ports:
+            - containerPort: 5432
+              name: postgresdb
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U "postgres" -h 127.0.0.1 -p 5432
+                - |
+                  grep -q "accepting connections"
+            failureThreshold: 6
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThrehold: 1
+            timeoutSeconds: 5
+          imagePullPolicy: "Always"
+          resources:
+            requests:
+              memory: "2048Mi"
+              cpu: "2000m"
+            limits:
+              memory: "2048Mi"
+              cpu: "2000m"
+          securityContext:
+            readOnlyRootFilesystem: true
+          envFrom:
+            - secretRef:
+                name: postgresdb-secret
+            - configMapRef:
+                name: postgresdb-configmap
+          volumeMounts:
+            - name: postgres-empty-dir
+              mountPath: /var/run/postgresql
+            - name: postgres-empty-dir-tmp
+              mountPath: /tmp
+            - name: configmap-vol
+              mountPath: /etc/psg-configmap
+            - name: secret-vol
+              mountPath: /etc/psg-secret
+            - name: postgresql-data
+              mountPath: /var/lib/postgresql/data
+              readOnly: false
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+  volumeClaimTemplates:
+    - metadata:
+        name: postgresql-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: ceph-dynamic
+        resources:
+          requests:
+            storage: 100Gi

@@ -1,0 +1,87 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarqube
+  namespace: sonarqube
+  labels:
+    app: sonarqube
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sonarqube
+  template:
+    metadata:
+      labels:
+        app: sonarqube
+    spec:
+      nodeSelector:
+        vmcount: max
+      containers:
+        - name: sonarqube
+          image: docker.artifactory.ba.heg.com/sonarqube:9-community
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9000
+          livenessProbe:
+            initialDelaySeconds: 130
+            failureThreshold: 1
+            periodSeconds: 2
+            successThreshold: 1
+            httpGet:
+              port: 9000
+              path: /
+          readinessProbe:
+            failureThreshold: 1
+            initialDelaySeconds: 130
+            periodSeconds: 20
+            successThreshold: 1
+            timeoutSeconds: 3
+            httpGet:
+              path: /api/system/status
+              port: 9000
+          envFrom:
+            - secretRef:
+                name: postgresdb-secret
+            - configMapRef:
+                name: postgresdb-configmap
+          volumeMounts:
+            - name: sonarqube-empty-dir
+              mountPath: /opt/sonarqube/temp
+            - name: sonarqube-pvc
+              mountPath: "/opt/sonarqube/data/"
+              subPath: data
+            - name: sonarqube-pvc
+              mountPath: "/opt/sonarqube/extensions/"
+              subPath: extensions
+            - name: sonarqube-pvc
+              mountPath: /opt/sonarqube/logs
+              subPath: logs
+          env:
+            - name: SONARDATA
+              value: /opt/sonarqube/data/sonar
+            - name: SONAREXTENSION
+              value: /opt/sonarqube/extensions/sonar
+            - name: SONARLOGS
+              value: /opt/sonarqube/logs/
+          securityContext:
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              memory: "2048Mi"
+              cpu: "400m"
+            limits:
+              memory: "4098Mi"
+              cpu: "800m"
+      volumes:
+        - name: sonarqube-empty-dir
+          emptyDir: {}
+        - name: configmap-vol
+          configmap:
+            name: postgresdb-configmap
+        - name: secret-vol
+          secret:
+            secretName: postgresdb-secret
+        - name: sonarqube-pvc
+          persistentVolumeClaim:
